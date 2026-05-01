@@ -59,6 +59,17 @@ AZURE_DEVOPS_REPO=your_repo
 
 # Optional when work items live in a different project
 AZURE_DEVOPS_WORKITEM_PROJECT=your_work_item_project
+
+# Optional commit config
+COMMIT_TYPE_OPTIONS=feat,fix,refactor,docs,style,test,chore
+COMMIT_SCOPE_OPTIONS=Requestor,Supplier
+COMMIT_SCOPE_BLANK_LABEL=No scope
+COMMIT_SCOPE_TEMPLATE=[{scope}]
+COMMIT_WORK_ITEM_TEMPLATE=[{work_item_tag} {work_item_id}]
+COMMIT_SUBJECT_TEMPLATE={type}{scope_part}{work_item_part}: {summary}
+COMMIT_DEFAULT_WORK_ITEM_TAG=US
+COMMIT_BUG_WORK_ITEM_TAG=BUG
+COMMIT_SUBJECT_MAX_LENGTH=72
 ```
 
 Notes:
@@ -66,6 +77,7 @@ Notes:
 - `AZURE_DEVOPS_PAT` is required.
 - `ORG/PROJECT/REPO` can be auto-detected from current repo `origin` if it is an Azure DevOps remote.
 - Work item project defaults to PR project unless `AZURE_DEVOPS_WORKITEM_PROJECT` is set.
+- Commit scopes, work item tags, subject template, and subject length can be configured from `.env`.
 
 ## Usage
 
@@ -78,7 +90,7 @@ python commit_and_pr.py
 Provide commit message directly:
 
 ```bash
-python commit_and_pr.py -m "feat(#61527): add supplier search validation"
+python commit_and_pr.py -m "feat[Requestor][US 61527]: Add supplier search validation"
 ```
 
 Dry-run (no commit/push/PR):
@@ -90,7 +102,7 @@ python commit_and_pr.py --dry-run
 Dry-run with explicit message:
 
 ```bash
-python commit_and_pr.py --dry-run -m "fix(#61527): handle null payload"
+python commit_and_pr.py --dry-run -m "fix[Supplier][BUG 61527]: Handle null payload"
 ```
 
 Validation-only mode (no prompts, no commit/push/PR):
@@ -143,13 +155,23 @@ If a repo remote is not ADO or you want explicit values, use CLI overrides (`--o
 - If `--message` is passed, that value is used directly.
 - If message is not passed:
   - Script shows numbered options for commit type
-  - Script shows numbered options for scope (`Requestor`, `Supplier`, or no scope)
-  - Script uses work item id as `US <number>` or `BUG <number>`
+  - Script shows numbered options for scope from your configured scope list
+  - Script uses work item id tags from your configured defaults (for example `US` / `BUG`)
   - Script offers summary selection:
     - use default work item title
     - or enter custom summary
-  - If default title would exceed 72 characters, script warns and asks whether to keep default anyway or enter a shorter summary
-  - Script builds the subject using the locked standard
+  - If default title would exceed your configured subject limit, script warns and asks whether to keep default anyway or enter a shorter summary
+  - Script builds the subject using your configured subject template
+
+Current default config in this repo:
+
+- Types: `feat`, `fix`, `refactor`, `docs`, `style`, `test`, `chore`
+- Scopes: `Requestor`, `Supplier`
+- Subject template: `{type}{scope_part}{work_item_part}: {summary}`
+- Scope template: `[{scope}]`
+- Work item template: `[{work_item_tag} {work_item_id}]`
+- Work item tags: `US` for non-bug work, `BUG` for bug work
+- Max subject length: `72`
 
 Examples:
 
@@ -162,20 +184,20 @@ You can use different commit prefixes depending on the kind of change:
 
 | Type | When to use | Example |
 |---|---|---|
-| `feat` | New feature or user-facing enhancement | `feat(#61527): Add supplier risk filter` |
-| `fix` | Bug fix or hotfix | `fix(#61527): Prevent null response crash` |
-| `chore` | Internal change, maintenance, cleanup, config, task, spike | `chore(#61527): Update API mapping config` |
-| `docs` | Documentation-only change | `docs(#61527): Clarify onboarding steps` |
-| `refactor` | Code restructuring without functional change | `refactor(#61527): Simplify approval service flow` |
-| `test` | Test-only changes | `test(#61527): Cover PR duplicate handling` |
+| `feat` | New feature or user-facing enhancement | `feat[Requestor][US 61527]: Add supplier risk filter` |
+| `fix` | Bug fix or hotfix | `fix[Supplier][BUG 61527]: Prevent null response crash` |
+| `chore` | Internal change, maintenance, cleanup, config, task, spike | `chore[US 61527]: Update API mapping config` |
+| `docs` | Documentation-only change | `docs[US 61527]: Clarify onboarding steps` |
+| `refactor` | Code restructuring without functional change | `refactor[Requestor][US 61527]: Simplify approval service flow` |
+| `test` | Test-only changes | `test[BUG 61527]: Cover PR duplicate handling` |
 
-Recommended pattern:
+Recommended pattern with current defaults:
 
 ```text
 <type>[<scope>][US <number>]: <short summary>
 ```
 
-Allowed subject formats:
+Allowed subject formats with current defaults:
 
 ```text
 <type>[Requestor|Supplier]: <short summary>
@@ -184,7 +206,7 @@ Allowed subject formats:
 <type>[Requestor|Supplier][BUG <number>]: <short summary>
 ```
 
-Rules:
+Rules with current defaults:
 
 - Types: `feat`, `fix`, `refactor`, `docs`, `style`, `test`, `chore`
 - Use imperative tone
@@ -198,7 +220,42 @@ Examples:
 - `fix[Supplier][BUG 61527]: Handle missing branch target`
 - `chore[US 61527]: Clean up PR logging output`
 
-The automation asks you for `type`, `scope`, and a short summary when message is not supplied. It derives `US` or `BUG` from the work item/branch context.
+The automation asks you for `type`, `scope`, and a short summary when message is not supplied. It derives the work item tag from the work item/branch context using your configured default and bug tags.
+
+## Commit Config
+
+The automation is now configurable for other teams without code changes.
+
+Most useful commit settings:
+
+- `COMMIT_TYPE_OPTIONS`: comma-separated commit types shown in the type prompt
+- `COMMIT_SCOPE_OPTIONS`: comma-separated scopes shown in the scope prompt
+- `COMMIT_SCOPE_BLANK_LABEL`: label for the no-scope option
+- `COMMIT_SCOPE_TEMPLATE`: how scope is rendered, e.g. `[{scope}]` or `({scope})`
+- `COMMIT_WORK_ITEM_TEMPLATE`: how work item tag/id is rendered
+- `COMMIT_SUBJECT_TEMPLATE`: full subject pattern using placeholders
+- `COMMIT_DEFAULT_WORK_ITEM_TAG`: default tag for non-bug work items
+- `COMMIT_BUG_WORK_ITEM_TAG`: tag used for bug work items
+- `COMMIT_SUBJECT_MAX_LENGTH`: warning/error length for subject line
+
+Available placeholders:
+
+- In `COMMIT_SCOPE_TEMPLATE`: `{scope}`
+- In `COMMIT_WORK_ITEM_TEMPLATE`: `{work_item_tag}`, `{work_item_id}`
+- In `COMMIT_SUBJECT_TEMPLATE`: `{type}`, `{scope}`, `{scope_part}`, `{work_item_tag}`, `{work_item_id}`, `{work_item_part}`, `{summary}`
+
+Example alternate config:
+
+```env
+COMMIT_SCOPE_OPTIONS=Frontend,Backend
+COMMIT_SCOPE_BLANK_LABEL=No area
+COMMIT_SCOPE_TEMPLATE=({scope})
+COMMIT_WORK_ITEM_TEMPLATE=[#{work_item_id}]
+COMMIT_SUBJECT_TEMPLATE={type}{scope_part} {work_item_part} {summary}
+COMMIT_DEFAULT_WORK_ITEM_TAG=STORY
+COMMIT_BUG_WORK_ITEM_TAG=BUG
+COMMIT_SUBJECT_MAX_LENGTH=90
+```
 
 Prompt behavior:
 
@@ -327,6 +384,15 @@ Includes:
 | PR URL not visible | Looking in wrong execution mode | Run normal mode (not `--dry-run`) and check the `PR created:` line in terminal |
 
 ## Changelog
+
+### v1.7.0 - Configurable Commit Convention
+
+| Feature | Details |
+|---|---|
+| Env-driven scopes | Scope options are now configurable from `.env` instead of hardcoded values. |
+| Env-driven subject format | Commit subject template, scope rendering, work item rendering, and max length are now configurable. |
+| Env-driven tags | Default and bug work item tags are now configurable in `.env`. |
+| Generic setup docs | README and `.env.example` now document how to adapt the automation for other teams. |
 
 ### v1.6.0 - Locked Commit Standard + Automatic PR Description
 

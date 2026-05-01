@@ -27,6 +27,7 @@ import json
 import webbrowser
 from pathlib import Path
 from datetime import datetime, timezone
+from dataclasses import dataclass
 
 import requests
 from requests.auth import HTTPBasicAuth
@@ -40,6 +41,19 @@ console = Console()
 ADO_API_VERSION = "7.1"
 COMMIT_TYPES = ("feat", "fix", "refactor", "docs", "style", "test", "chore")
 COMMIT_SCOPES = ("Requestor", "Supplier")
+
+
+@dataclass(frozen=True)
+class CommitConfig:
+    types: tuple[str, ...]
+    scopes: tuple[str, ...]
+    scope_blank_label: str
+    scope_template: str
+    work_item_template: str
+    subject_template: str
+    default_work_item_tag: str
+    bug_work_item_tag: str
+    subject_max_length: int
 
 BRANCH_PATTERN = re.compile(
     r"^(?P<type>feature|bug|bugfix|hotfix)/(?P<target>[^/]+)/(?P<work_item_id>\d+)$",
@@ -62,7 +76,26 @@ ADO_REMOTE_PATTERNS = [
 ]
 
 
-def load_pat() -> tuple[str, str, str, str, str]:
+def parse_csv_setting(raw_value: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    values = tuple(item.strip() for item in raw_value.split(",") if item.strip())
+    return values or default
+
+
+def build_commit_config() -> CommitConfig:
+    return CommitConfig(
+        types=parse_csv_setting(os.getenv("COMMIT_TYPE_OPTIONS", ""), COMMIT_TYPES),
+        scopes=parse_csv_setting(os.getenv("COMMIT_SCOPE_OPTIONS", ""), COMMIT_SCOPES),
+        scope_blank_label=os.getenv("COMMIT_SCOPE_BLANK_LABEL", "No scope").strip() or "No scope",
+        scope_template=os.getenv("COMMIT_SCOPE_TEMPLATE", "[{scope}]").strip() or "[{scope}]",
+        work_item_template=os.getenv("COMMIT_WORK_ITEM_TEMPLATE", "[{work_item_tag} {work_item_id}]").strip() or "[{work_item_tag} {work_item_id}]",
+        subject_template=os.getenv("COMMIT_SUBJECT_TEMPLATE", "{type}{scope_part}{work_item_part}: {summary}").strip() or "{type}{scope_part}{work_item_part}: {summary}",
+        default_work_item_tag=os.getenv("COMMIT_DEFAULT_WORK_ITEM_TAG", "US").strip() or "US",
+        bug_work_item_tag=os.getenv("COMMIT_BUG_WORK_ITEM_TAG", "BUG").strip() or "BUG",
+        subject_max_length=int(os.getenv("COMMIT_SUBJECT_MAX_LENGTH", "72").strip() or "72"),
+    )
+
+
+def load_pat() -> tuple[str, str, str, str, str, CommitConfig]:
     env_path = Path(__file__).parent / ".env"
     if not env_path.exists():
         console.print("[bold red]ERROR:[/] .env file not found in this folder.")
@@ -82,7 +115,7 @@ def load_pat() -> tuple[str, str, str, str, str]:
         console.print(f"[bold red]ERROR:[/] Missing in .env: {', '.join(missing)}")
         sys.exit(1)
 
-    return pat, org, project, repo, work_item_project
+    return pat, org, project, repo, work_item_project, build_commit_config()
 
 
 def parse_ado_remote(origin_url: str) -> tuple[str, str, str] | None:
@@ -141,10 +174,18 @@ def resolve_prefix(branch_type: str, work_item_type: str | None) -> str:
     return "fix" if branch_type.lower() in ("bug", "bugfix", "hotfix") else "feat"
 
 
-def resolve_work_item_subject_tag(branch_type: str, work_item_type: str | None) -> str:
+def resolve_work_item_subject_tag(
+    branch_type: str,
+    work_item_type: str | None,
+    commit_config: CommitConfig,
+) -> str:
     if work_item_type and work_item_type.strip().lower() == "bug":
-        return "BUG"
-    return "BUG" if branch_type.lower() in ("bug", "bugfix", "hotfix") else "US"
+        return commit_config.bug_work_item_tag
+    return (
+        commit_config.bug_work_item_tag
+        if branch_type.lower() in ("bug", "bugfix", "hotfix")
+        else commit_config.default_work_item_tag
+    )
 
 
 def git(*args: str, check: bool = True) -> str:
@@ -189,18 +230,35 @@ def parse_branch(branch: str) -> tuple[str, str | None]:
 
 
 def format_commit_subject(
+    commit_config: CommitConfig,
     commit_type: str,
     scope: str | None,
     work_item_tag: str | None,
     work_item_id: str | None,
     summary: str,
 ) -> str:
-    segments = [f"{commit_type}"]
-    if scope:
-        segments.append(f"[{scope}]")
-    if work_item_tag and work_item_id:
-        segments.append(f"[{work_item_tag} {work_item_id}]")
-    return "".join(segments) + f": {summary}"
+    scope_part = commit_config.scope_template.format(scope=scope) if scope else ""
+    work_item_part = (
+        commit_config.work_item_template.format(work_item_tag=work_item_tag, work_item_id=work_item_id)
+        if work_item_tag and work_item_id
+        else ""
+    )
+    return commit_config.subject_template.format(
+        type=commit_type,
+        scope=scope or "",
+        scope_part=scope_part,
+        work_item_tag=work_item_tag or "",
+        work_item_id=work_item_id or "",
+        work_item_part=work_item_part,
+        summary=summary,
+    )
+
+
+def infer_scope_from_message(commit_message: str, commit_config: CommitConfig) -> str | None:
+    for scope in commit_config.scopes:
+        if commit_config.scope_template.format(scope=scope) in commit_message:
+            return scope
+    return None
 
 
 def choose_numbered_option(
@@ -251,6 +309,7 @@ def choose_numbered_option(
 
 
 def build_commit_message(
+    commit_config: CommitConfig,
     branch_type: str,
     work_item_id: str | None,
     work_item_details: dict | None,
@@ -267,32 +326,39 @@ def build_commit_message(
         )
 
     default_type = resolve_prefix(branch_type, work_item_type)
-    work_item_tag = resolve_work_item_subject_tag(branch_type, work_item_type) if work_item_id else None
+    work_item_tag = (
+        resolve_work_item_subject_tag(branch_type, work_item_type, commit_config)
+        if work_item_id
+        else None
+    )
 
     commit_type = choose_numbered_option(
         label="Commit type",
-        options=COMMIT_TYPES,
+        options=commit_config.types,
         default_value=default_type,
     )
 
-    scope = choose_numbered_option(
-        label="Scope",
-        options=COMMIT_SCOPES,
-        allow_blank=True,
-        blank_label="No scope",
-    )
+    scope = None
+    if commit_config.scopes:
+        scope = choose_numbered_option(
+            label="Scope",
+            options=commit_config.scopes,
+            allow_blank=True,
+            blank_label=commit_config.scope_blank_label,
+        )
 
     while True:
         allow_long_subject = False
         if work_item_title:
             default_subject = format_commit_subject(
+                commit_config,
                 commit_type,
                 scope,
                 work_item_tag,
                 work_item_id,
                 work_item_title,
             )
-            default_too_long = len(default_subject) > 72
+            default_too_long = len(default_subject) > commit_config.subject_max_length
             if default_too_long:
                 console.print(
                     f"\n[yellow]Default summary will exceed 72 characters[/] "
@@ -343,10 +409,10 @@ def build_commit_message(
             console.print("[bold red]ERROR:[/] Summary cannot be empty.")
             continue
 
-        subject = format_commit_subject(commit_type, scope or None, work_item_tag, work_item_id, summary)
-        if len(subject) > 72 and not allow_long_subject:
+        subject = format_commit_subject(commit_config, commit_type, scope or None, work_item_tag, work_item_id, summary)
+        if len(subject) > commit_config.subject_max_length and not allow_long_subject:
             console.print(
-                f"[bold red]ERROR:[/] Subject must be 72 characters or fewer. Current length: {len(subject)}"
+                f"[bold red]ERROR:[/] Subject must be {commit_config.subject_max_length} characters or fewer. Current length: {len(subject)}"
             )
             continue
         break
@@ -646,7 +712,7 @@ def main() -> None:
     if args.strict_only:
         args.strict = True
 
-    pat, env_org, env_project, env_repo, env_work_item_project = load_pat()
+    pat, env_org, env_project, env_repo, env_work_item_project, commit_config = load_pat()
     origin_ctx = get_origin_ado_context()
 
     org = args.org or (origin_ctx[0] if origin_ctx else "") or env_org
@@ -760,11 +826,19 @@ def main() -> None:
     if args.message and args.message.strip():
         commit_message = args.message.strip()
         console.print("[dim]Using provided commit message.[/]")
-        work_item_tag = resolve_work_item_subject_tag(branch_type, work_item_details.get("type") if work_item_details else None) if work_item_id else None
-        commit_scope = "Requestor" if "[Requestor]" in commit_message else "Supplier" if "[Supplier]" in commit_message else None
+        work_item_tag = (
+            resolve_work_item_subject_tag(
+                branch_type,
+                work_item_details.get("type") if work_item_details else None,
+                commit_config,
+            )
+            if work_item_id
+            else None
+        )
+        commit_scope = infer_scope_from_message(commit_message, commit_config)
         commit_summary = commit_message.split(":", 1)[1].strip() if ":" in commit_message else commit_message.strip()
     else:
-        commit_details = build_commit_message(branch_type, work_item_id, work_item_details, work_item_label)
+        commit_details = build_commit_message(commit_config, branch_type, work_item_id, work_item_details, work_item_label)
         commit_message = commit_details["subject"]
         commit_scope = commit_details["scope"]
         commit_summary = commit_details["summary"]
