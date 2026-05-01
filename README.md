@@ -93,6 +93,18 @@ Dry-run with explicit message:
 python commit_and_pr.py --dry-run -m "fix(#61527): handle null payload"
 ```
 
+Validation-only mode (no prompts, no commit/push/PR):
+
+```bash
+python commit_and_pr.py --strict-only
+```
+
+Open PR automatically in browser after creation:
+
+```bash
+python commit_and_pr.py --open-pr
+```
+
 Run for a specific repo/project without changing `.env`:
 
 ```bash
@@ -110,6 +122,8 @@ python commit_and_pr.py --org your_org --project SupplierHub_22632 --repo your_r
 | `--repo` | Override Azure DevOps repository name for this run. |
 | `--workitem-project` | Override Azure DevOps project where work items are fetched from. |
 | `--strict` | Run strict preflight checks and fail fast before commit/push/PR. |
+| `--strict-only` | Run validations only and exit. No prompts, commit, push, or PR creation. |
+| `--open-pr` | Open created PR URL in default browser after successful creation. |
 
 ## Multiple Repositories
 
@@ -188,6 +202,17 @@ When `--strict` is used, it also enforces:
 
 If any check fails, script exits before commit/push/PR.
 
+`--strict-only` means "run validations only".
+
+In this mode, script validates:
+
+- ADO context resolution (org/project/repo)
+- PAT access to repo/project
+- target branch inference and existence
+- strict branch naming and origin-detection rules
+
+Then it exits without prompting, commit, push, or PR creation.
+
 ## Existing PR Handling
 
 If a matching PR already exists for the same source and target branch, script reports:
@@ -208,7 +233,7 @@ Each run writes an audit line to:
 Includes:
 
 - UTC timestamp
-- status (`dry_run`, `success`, `existing_pr`, `preflight_failed`, `pr_failed`)
+- status (`dry_run`, `success`, `existing_pr`, `preflight_failed`, `strict_only_passed`, `pr_failed`)
 - resolved org/project/repo and work item project
 - source/target branches
 - work item id
@@ -228,6 +253,14 @@ Includes:
 | PR URL not visible | Looking in wrong execution mode | Run normal mode (not `--dry-run`) and check the `PR created:` line in terminal |
 
 ## Changelog
+
+### v1.5.0 - Browser Open + Validation-Only Mode
+
+| Feature | Details |
+|---|---|
+| Browser auto-open | Added `--open-pr` to launch created PR in your default browser. |
+| Validation-only mode | Added `--strict-only` to run checks and exit with no side effects. |
+| Validation docs | Added explicit explanation of what validations are executed in strict-only mode. |
 
 ### v1.4.1 - Output Documentation Update
 

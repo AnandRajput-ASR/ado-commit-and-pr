@@ -24,6 +24,7 @@ import subprocess
 import sys
 import argparse
 import json
+import webbrowser
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -278,6 +279,10 @@ def run_preflight_checks(
     if strict and not origin_detected:
         failures.append("Could not detect Azure DevOps repo context from git origin in strict mode.")
 
+    if not target_ref:
+        failures.append("Unable to infer target branch from current branch name.")
+        return failures
+
     try:
         repo_url = (
             f"https://dev.azure.com/{org}/{project}/_apis/git/repositories/"
@@ -403,6 +408,16 @@ def append_audit_log(
         f.write(json.dumps(record, ensure_ascii=True) + "\n")
 
 
+def open_pr_in_browser(pr_url: str) -> None:
+    try:
+        if webbrowser.open(pr_url):
+            console.print("[green]Opened PR in browser.[/]")
+        else:
+            console.print(f"[yellow]Could not auto-open browser. Open manually:[/] {pr_url}")
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[yellow]Browser open failed:[/] {exc}")
+
+
 def create_pr(
     org: str,
     project: str,
@@ -457,7 +472,20 @@ def main() -> None:
         action="store_true",
         help="Run strict preflight checks and fail fast before commit/push/PR.",
     )
+    parser.add_argument(
+        "--strict-only",
+        action="store_true",
+        help="Run validations only and exit. No prompts, commit, push, or PR creation.",
+    )
+    parser.add_argument(
+        "--open-pr",
+        action="store_true",
+        help="Open the PR URL in your default browser after successful creation.",
+    )
     args = parser.parse_args()
+
+    if args.strict_only:
+        args.strict = True
 
     pat, env_org, env_project, env_repo, env_work_item_project = load_pat()
     origin_ctx = get_origin_ado_context()
@@ -489,15 +517,15 @@ def main() -> None:
     console.print(f"[dim]Branch:[/] [cyan]{branch}[/]")
 
     staged_changes = has_staged_changes()
-    if not staged_changes and not args.dry_run:
+    if not staged_changes and not args.dry_run and not args.strict_only:
         console.print("[bold red]ERROR:[/] No staged changes. Stage your files first (git add …).")
         sys.exit(1)
-    if not staged_changes and args.dry_run:
+    if not staged_changes and (args.dry_run or args.strict_only):
         console.print("[yellow]Dry run:[/] no staged changes found, continuing preview only.")
 
     target_ref, work_item_id = parse_branch(branch)
 
-    if not target_ref:
+    if not target_ref and not args.strict and not args.strict_only:
         console.print(
             f"[yellow]WARNING:[/] Branch [cyan]{branch}[/] doesn't match expected pattern "
             f"(feature|bug)/<release|develop>/<work-item-id>.\n"
@@ -537,6 +565,23 @@ def main() -> None:
             details="; ".join(preflight_failures),
         )
         sys.exit(1)
+
+    if args.strict_only:
+        append_audit_log(
+            status="strict_only_passed",
+            org=org,
+            project=project,
+            repo=repo,
+            work_item_project=work_item_project,
+            source_branch=branch,
+            target_ref=target_ref,
+            commit_message=args.message.strip() if args.message else "(validation-only)",
+            work_item_id=None,
+            commit_hash=None,
+            pr_url=None,
+        )
+        console.print("[bold green]Strict validation passed.[/] No commit, push, or PR was performed.")
+        return
 
     branch_type = branch.split("/")[0] if "/" in branch else "feature"
     work_item_label = "Bug" if branch_type.lower() in ("bug", "bugfix", "hotfix") else "User Story"
@@ -613,6 +658,8 @@ def main() -> None:
     try:
         pr_url = create_pr(org, project, repo, branch, target_ref, pr_title, work_item_id, auth)
         console.print(f"\n[bold green]PR created:[/] {pr_url}")
+        if args.open_pr:
+            open_pr_in_browser(pr_url)
         append_audit_log(
             status="success",
             org=org,
