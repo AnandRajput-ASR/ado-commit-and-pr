@@ -109,6 +109,7 @@ python commit_and_pr.py --org your_org --project SupplierHub_22632 --repo your_r
 | `--project` | Override Azure DevOps project used for repo and PR creation. |
 | `--repo` | Override Azure DevOps repository name for this run. |
 | `--workitem-project` | Override Azure DevOps project where work items are fetched from. |
+| `--strict` | Run strict preflight checks and fail fast before commit/push/PR. |
 
 ## Multiple Repositories
 
@@ -127,7 +128,8 @@ If a repo remote is not ADO or you want explicit values, use CLI overrides (`--o
 
 - If `--message` is passed, that value is used directly.
 - If message is not passed:
-  - Script infers branch type (`feature` => `feat`, `bug|bugfix|hotfix` => `fix`)
+  - Script tries work item type first (`Bug` => `fix`, `User Story/PBI/Feature` => `feat`, `Task/Spike` => `chore`)
+  - If work item type is unavailable, it falls back to branch type (`feature` => `feat`, `bug|bugfix|hotfix` => `fix`)
   - If work item title is available from ADO, it uses that title
   - Otherwise asks for a short description and builds header
 
@@ -154,12 +156,55 @@ In `--dry-run` mode, script will:
 - Infer/ask story or bug ID
 - Build commit message preview
 - Show planned PR mapping
+- Show a structured execution plan including resolved org/project/repo, work item project, commit title/body status, and PR payload preview
 
 In `--dry-run` mode, script will not:
 
 - create commit
 - push branch
 - call PR creation API
+
+## Preflight Checks
+
+The script performs preflight checks before the main action.
+
+- Repo/project validation with your PAT
+- Target branch existence check
+
+When `--strict` is used, it also enforces:
+
+- Branch naming pattern: `(feature|bug|bugfix|hotfix)/<release|develop>/<work-item-id>`
+- ADO context must be detected from current repo `origin`
+
+If any check fails, script exits before commit/push/PR.
+
+## Existing PR Handling
+
+If a matching PR already exists for the same source and target branch, script reports:
+
+- Existing PR URL
+- PR status
+- Reviewers
+- Last update/creation timestamp available from ADO
+
+No new duplicate PR is created.
+
+## Audit Logs
+
+Each run writes an audit line to:
+
+- `logs/run-log.jsonl`
+
+Includes:
+
+- UTC timestamp
+- status (`dry_run`, `success`, `existing_pr`, `preflight_failed`, `pr_failed`)
+- resolved org/project/repo and work item project
+- source/target branches
+- work item id
+- commit title and commit hash (if created)
+- PR URL (if available)
+- failure/extra details
 
 ## Troubleshooting
 
@@ -172,6 +217,16 @@ In `--dry-run` mode, script will not:
 | PR already exists | ADO already has open PR for source branch | Script reports existing PR URL |
 
 ## Changelog
+
+### v1.4.0 - Validation, Reporting, and Logging
+
+| Feature | Details |
+|---|---|
+| Work item type-aware commits | Commit prefix now prefers work item type mapping (`Bug`/`User Story`/`Task` etc.) before branch fallback. |
+| Strict preflight mode | Added `--strict` with branch-format and origin-context enforcement plus fail-fast validation. |
+| Rich duplicate PR output | On duplicate PR conflict, script now reports URL, status, reviewers, and update timestamp details. |
+| Structured dry-run plan | Dry-run now prints a full execution summary and PR payload preview. |
+| Run audit logging | Added JSONL audit logs under `logs/run-log.jsonl` for traceability. |
 
 ### v1.3.0 - Multi-Repo Context Resolution
 
