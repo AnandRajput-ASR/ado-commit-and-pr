@@ -147,6 +147,16 @@ Examples:
 5. Script creates PR to inferred target
 6. Script links work item to PR
 
+## Terminal Output
+
+After successful PR creation, terminal prints the created PR link:
+
+```text
+PR created: https://dev.azure.com/<org>/<project>/_git/<repo>/pullrequest/<id>
+```
+
+In dry-run, script still prints full commit message preview and planned PR details, but does not create PR.
+
 ## Dry-Run Behavior
 
 In `--dry-run` mode, script will:
@@ -215,8 +225,16 @@ Includes:
 | Branch not matching pattern | Custom branch format | Enter target branch and work item when prompted |
 | Work item title not fetched | Invalid ID or permission issue | Check ID, PAT scope, and org/project access |
 | PR already exists | ADO already has open PR for source branch | Script reports existing PR URL |
+| PR URL not visible | Looking in wrong execution mode | Run normal mode (not `--dry-run`) and check the `PR created:` line in terminal |
 
 ## Changelog
+
+### v1.4.1 - Output Documentation Update
+
+| Feature | Details |
+|---|---|
+| PR link visibility docs | Added explicit `Terminal Output` section showing the `PR created: <url>` line. |
+| Dry-run output clarification | Documented that dry-run still prints commit and PR preview but does not create PR. |
 
 ### v1.4.0 - Validation, Reporting, and Logging
 
