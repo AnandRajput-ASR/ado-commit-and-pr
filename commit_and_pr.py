@@ -41,8 +41,23 @@ BRANCH_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+ADO_REMOTE_PATTERNS = [
+    re.compile(
+        r"^https://(?:[^@/]+@)?dev\.azure\.com/(?P<org>[^/]+)/(?P<project>[^/]+)/_git/(?P<repo>[^/]+?)(?:\.git)?$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^https://(?P<org>[^./]+)\.visualstudio\.com/(?P<project>[^/]+)/_git/(?P<repo>[^/]+?)(?:\.git)?$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^git@ssh\.dev\.azure\.com:v3/(?P<org>[^/]+)/(?P<project>[^/]+)/(?P<repo>[^/]+)$",
+        re.IGNORECASE,
+    ),
+]
 
-def load_pat() -> tuple[str, str, str, str]:
+
+def load_pat() -> tuple[str, str, str, str, str]:
     env_path = Path(__file__).parent / ".env"
     if not env_path.exists():
         console.print("[bold red]ERROR:[/] .env file not found in this folder.")
@@ -53,18 +68,34 @@ def load_pat() -> tuple[str, str, str, str]:
     org = os.getenv("AZURE_DEVOPS_ORG", "").strip()
     project = os.getenv("AZURE_DEVOPS_PROJECT", "").strip()
     repo = os.getenv("AZURE_DEVOPS_REPO", "").strip()
+    work_item_project = os.getenv("AZURE_DEVOPS_WORKITEM_PROJECT", "").strip() or project
 
     missing = [k for k, v in [
         ("AZURE_DEVOPS_PAT", pat),
-        ("AZURE_DEVOPS_ORG", org),
-        ("AZURE_DEVOPS_PROJECT", project),
-        ("AZURE_DEVOPS_REPO", repo),
     ] if not v]
     if missing:
         console.print(f"[bold red]ERROR:[/] Missing in .env: {', '.join(missing)}")
         sys.exit(1)
 
-    return pat, org, project, repo
+    return pat, org, project, repo, work_item_project
+
+
+def parse_ado_remote(origin_url: str) -> tuple[str, str, str] | None:
+    clean = origin_url.strip()
+    for pattern in ADO_REMOTE_PATTERNS:
+        match = pattern.match(clean)
+        if match:
+            d = match.groupdict()
+            return d["org"], d["project"], d["repo"]
+    return None
+
+
+def get_origin_ado_context() -> tuple[str, str, str] | None:
+    try:
+        origin = git("remote", "get-url", "origin")
+    except subprocess.CalledProcessError:
+        return None
+    return parse_ado_remote(origin)
 
 
 def git(*args: str, check: bool = True) -> str:
@@ -108,9 +139,9 @@ def parse_branch(branch: str) -> tuple[str, str | None]:
     return target_ref, work_item_id
 
 
-def get_work_item_title(org: str, work_item_id: str, auth: HTTPBasicAuth) -> str | None:
+def get_work_item_title(org: str, project: str, work_item_id: str, auth: HTTPBasicAuth) -> str | None:
     url = (
-        f"https://dev.azure.com/{org}/_apis/wit/workitems/{work_item_id}"
+        f"https://dev.azure.com/{org}/{project}/_apis/wit/workitems/{work_item_id}"
         f"?api-version={ADO_API_VERSION}"
     )
     try:
@@ -207,9 +238,39 @@ def main() -> None:
         action="store_true",
         help="Preview commit/push/PR actions without creating commit, push, or PR.",
     )
+    parser.add_argument("--org", help="Override Azure DevOps org for this run.")
+    parser.add_argument("--project", help="Override Azure DevOps repo/PR project for this run.")
+    parser.add_argument("--repo", help="Override Azure DevOps repository name for this run.")
+    parser.add_argument(
+        "--workitem-project",
+        help="Override Azure DevOps project where work items are stored for this run.",
+    )
     args = parser.parse_args()
 
-    pat, org, project, repo = load_pat()
+    pat, env_org, env_project, env_repo, env_work_item_project = load_pat()
+    origin_ctx = get_origin_ado_context()
+
+    org = args.org or (origin_ctx[0] if origin_ctx else "") or env_org
+    project = args.project or (origin_ctx[1] if origin_ctx else "") or env_project
+    repo = args.repo or (origin_ctx[2] if origin_ctx else "") or env_repo
+    work_item_project = args.workitem_project or env_work_item_project or project
+
+    missing_runtime = [k for k, v in [
+        ("ORG", org),
+        ("PROJECT", project),
+        ("REPO", repo),
+    ] if not v]
+    if missing_runtime:
+        console.print(
+            "[bold red]ERROR:[/] Unable to resolve ADO context: "
+            + ", ".join(missing_runtime)
+            + "\nProvide via --org/--project/--repo, set origin remote to ADO URL, or set AZURE_DEVOPS_ORG/AZURE_DEVOPS_PROJECT/AZURE_DEVOPS_REPO in .env."
+        )
+        sys.exit(1)
+
+    console.print(
+        f"[dim]ADO context:[/] org=[cyan]{org}[/], project=[cyan]{project}[/], repo=[cyan]{repo}[/], workitems=[cyan]{work_item_project}[/]"
+    )
     auth = HTTPBasicAuth("", pat)
 
     branch = current_branch()
@@ -247,8 +308,8 @@ def main() -> None:
 
     work_item_title: str | None = None
     if work_item_id:
-        with console.status("[dim]Fetching work item title…[/]"):
-            work_item_title = get_work_item_title(org, work_item_id, auth)
+        with console.status(f"[dim]Fetching work item title from {work_item_project}…[/]"):
+            work_item_title = get_work_item_title(org, work_item_project, work_item_id, auth)
 
     if args.message and args.message.strip():
         commit_message = args.message.strip()

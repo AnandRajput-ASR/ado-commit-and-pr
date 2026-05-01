@@ -52,10 +52,20 @@ Required keys:
 
 ```env
 AZURE_DEVOPS_PAT=your_pat
+# Optional defaults (can be auto-detected from current repo origin remote)
 AZURE_DEVOPS_ORG=your_org
-AZURE_DEVOPS_PROJECT=your_project
+AZURE_DEVOPS_PROJECT=your_repo_project
 AZURE_DEVOPS_REPO=your_repo
+
+# Optional when work items live in a different project
+AZURE_DEVOPS_WORKITEM_PROJECT=your_work_item_project
 ```
+
+Notes:
+
+- `AZURE_DEVOPS_PAT` is required.
+- `ORG/PROJECT/REPO` can be auto-detected from current repo `origin` if it is an Azure DevOps remote.
+- Work item project defaults to PR project unless `AZURE_DEVOPS_WORKITEM_PROJECT` is set.
 
 ## Usage
 
@@ -83,12 +93,35 @@ Dry-run with explicit message:
 python commit_and_pr.py --dry-run -m "fix(#61527): handle null payload"
 ```
 
+Run for a specific repo/project without changing `.env`:
+
+```bash
+python commit_and_pr.py --org your_org --project SupplierHub_22632 --repo your_repo_name --workitem-project SupplierDueDiligence_PR1086
+```
+
 ## Flags
 
 | Flag | Description |
 |---|---|
 | `-m`, `--message` | Use provided commit message as-is. If omitted, script generates message interactively. |
 | `--dry-run` | Preview commit/PR plan without creating commit, push, or PR. |
+| `--org` | Override Azure DevOps org for this run. |
+| `--project` | Override Azure DevOps project used for repo and PR creation. |
+| `--repo` | Override Azure DevOps repository name for this run. |
+| `--workitem-project` | Override Azure DevOps project where work items are fetched from. |
+
+## Multiple Repositories
+
+For multiple repos, you do not need to store many names in one env file.
+
+Preferred flow:
+
+1. Open terminal in the target repository.
+2. Keep only PAT in `.env`.
+3. Script auto-reads org/project/repo from that repo's `origin` remote.
+4. Keep `AZURE_DEVOPS_WORKITEM_PROJECT=SupplierDueDiligence_PR1086` once in `.env`.
+
+If a repo remote is not ADO or you want explicit values, use CLI overrides (`--org --project --repo`).
 
 ## Commit Message Behavior
 
@@ -139,6 +172,14 @@ In `--dry-run` mode, script will not:
 | PR already exists | ADO already has open PR for source branch | Script reports existing PR URL |
 
 ## Changelog
+
+### v1.3.0 - Multi-Repo Context Resolution
+
+| Feature | Details |
+|---|---|
+| Multi-repo friendly | Added auto-detection of org/project/repo from current git `origin` ADO URL. |
+| Run-time overrides | Added `--org`, `--project`, `--repo`, and `--workitem-project` flags. |
+| Cross-project work items | Added support for work items from a different ADO project than PR/repo project. |
 
 ### v1.2.0 - Local Env Standardization
 
