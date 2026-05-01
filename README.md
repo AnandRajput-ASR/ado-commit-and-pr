@@ -142,15 +142,81 @@ If a repo remote is not ADO or you want explicit values, use CLI overrides (`--o
 
 - If `--message` is passed, that value is used directly.
 - If message is not passed:
-  - Script tries work item type first (`Bug` => `fix`, `User Story/PBI/Feature` => `feat`, `Task/Spike` => `chore`)
-  - If work item type is unavailable, it falls back to branch type (`feature` => `feat`, `bug|bugfix|hotfix` => `fix`)
-  - If work item title is available from ADO, it uses that title
-  - Otherwise asks for a short description and builds header
+  - Script asks for commit type
+  - Script asks for scope (`Requestor` or `Supplier`, or blank)
+  - Script uses work item id as `US <number>` or `BUG <number>`
+  - Script asks for a short summary
+  - Script builds the subject using the locked standard
 
 Examples:
 
-- `feat(#61527): Add invoice filter`
-- `fix(#61527): Resolve API timeout`
+- `feat[Requestor][US 61527]: Add invoice filter`
+- `fix[Supplier][BUG 61527]: Resolve API timeout`
+
+## Commit Message Types
+
+You can use different commit prefixes depending on the kind of change:
+
+| Type | When to use | Example |
+|---|---|---|
+| `feat` | New feature or user-facing enhancement | `feat(#61527): Add supplier risk filter` |
+| `fix` | Bug fix or hotfix | `fix(#61527): Prevent null response crash` |
+| `chore` | Internal change, maintenance, cleanup, config, task, spike | `chore(#61527): Update API mapping config` |
+| `docs` | Documentation-only change | `docs(#61527): Clarify onboarding steps` |
+| `refactor` | Code restructuring without functional change | `refactor(#61527): Simplify approval service flow` |
+| `test` | Test-only changes | `test(#61527): Cover PR duplicate handling` |
+
+Recommended pattern:
+
+```text
+<type>[<scope>][US <number>]: <short summary>
+```
+
+Allowed subject formats:
+
+```text
+<type>[Requestor|Supplier]: <short summary>
+<type>[US <number>]: <short summary>
+<type>[Requestor|Supplier][US <number>]: <short summary>
+<type>[Requestor|Supplier][BUG <number>]: <short summary>
+```
+
+Rules:
+
+- Types: `feat`, `fix`, `refactor`, `docs`, `style`, `test`, `chore`
+- Use imperative tone
+- Subject line must be 72 characters or fewer
+- Scope values are case-sensitive: `Requestor`, `Supplier`
+- Do not invent custom scopes
+
+Examples:
+
+- `feat[Requestor][US 61527]: Add supplier onboarding validation`
+- `fix[Supplier][BUG 61527]: Handle missing branch target`
+- `chore[US 61527]: Clean up PR logging output`
+
+The automation asks you for `type`, `scope`, and a short summary when message is not supplied. It derives `US` or `BUG` from the work item/branch context.
+
+## PR Description Behavior
+
+- PR description is always generated automatically.
+- It is intentionally short and human-readable.
+- It uses:
+  - work item id and title when available
+  - chosen scope when available
+  - source branch
+  - target branch
+  - short summary from the commit flow
+
+Generated PR description example:
+
+```text
+This PR covers US 61527: Add supplier onboarding validation.
+It is focused on the Requestor flow.
+It is being raised from feature/19.0.0/61527 to release/19.0.0.
+
+Summary: Add supplier onboarding validation.
+```
 
 ## End-to-End Workflow
 
@@ -169,7 +235,7 @@ After successful PR creation, terminal prints the created PR link:
 PR created: https://dev.azure.com/<org>/<project>/_git/<repo>/pullrequest/<id>
 ```
 
-In dry-run, script still prints full commit message preview and planned PR details, but does not create PR.
+In dry-run, script still prints full commit message preview, PR description preview, and planned PR details, but does not create PR.
 
 ## Dry-Run Behavior
 
@@ -253,6 +319,15 @@ Includes:
 | PR URL not visible | Looking in wrong execution mode | Run normal mode (not `--dry-run`) and check the `PR created:` line in terminal |
 
 ## Changelog
+
+### v1.6.0 - Locked Commit Standard + Automatic PR Description
+
+| Feature | Details |
+|---|---|
+| Locked commit format | Commit generation now follows the requested `type[scope][US/BUG n]: summary` pattern. |
+| Interactive commit prompts | Script now asks for commit type, scope, and summary when `-m` is not provided. |
+| Automatic PR description | PR description is always generated automatically in a shorter, more human style. |
+| Commit style docs | README now documents allowed commit formats, rules, and examples. |
 
 ### v1.5.0 - Browser Open + Validation-Only Mode
 

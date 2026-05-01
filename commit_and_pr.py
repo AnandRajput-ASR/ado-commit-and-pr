@@ -38,6 +38,8 @@ from rich.prompt import Prompt
 console = Console()
 
 ADO_API_VERSION = "7.1"
+COMMIT_TYPES = ("feat", "fix", "refactor", "docs", "style", "test", "chore")
+COMMIT_SCOPES = ("Requestor", "Supplier")
 
 BRANCH_PATTERN = re.compile(
     r"^(?P<type>feature|bug|bugfix|hotfix)/(?P<target>[^/]+)/(?P<work_item_id>\d+)$",
@@ -139,6 +141,12 @@ def resolve_prefix(branch_type: str, work_item_type: str | None) -> str:
     return "fix" if branch_type.lower() in ("bug", "bugfix", "hotfix") else "feat"
 
 
+def resolve_work_item_subject_tag(branch_type: str, work_item_type: str | None) -> str:
+    if work_item_type and work_item_type.strip().lower() == "bug":
+        return "BUG"
+    return "BUG" if branch_type.lower() in ("bug", "bugfix", "hotfix") else "US"
+
+
 def git(*args: str, check: bool = True) -> str:
     result = subprocess.run(["git", *args], capture_output=True, text=True, check=check)
     return result.stdout.strip()
@@ -193,12 +201,27 @@ def get_work_item_title(org: str, project: str, work_item_id: str, auth: HTTPBas
         return None
 
 
+def format_commit_subject(
+    commit_type: str,
+    scope: str | None,
+    work_item_tag: str | None,
+    work_item_id: str | None,
+    summary: str,
+) -> str:
+    segments = [f"{commit_type}"]
+    if scope:
+        segments.append(f"[{scope}]")
+    if work_item_tag and work_item_id:
+        segments.append(f"[{work_item_tag} {work_item_id}]")
+    return "".join(segments) + f": {summary}"
+
+
 def build_commit_message(
     branch_type: str,
     work_item_id: str | None,
     work_item_details: dict | None,
     work_item_label: str,
-) -> str:
+) -> dict:
     console.print()
     work_item_title = work_item_details.get("title") if work_item_details else None
     work_item_type = work_item_details.get("type") if work_item_details else None
@@ -209,22 +232,52 @@ def build_commit_message(
             f"[dim]Work item:[/] [cyan]#{work_item_id}[/]{type_part} — {work_item_title}"
         )
 
-    prefix = resolve_prefix(branch_type, work_item_type)
-    scope = f"#{work_item_id}" if work_item_id else ""
+    default_type = resolve_prefix(branch_type, work_item_type)
+    work_item_tag = resolve_work_item_subject_tag(branch_type, work_item_type) if work_item_id else None
 
-    if work_item_title:
-        return f"{prefix}({scope}): {work_item_title}" if scope else f"{prefix}: {work_item_title}"
-
-    description = Prompt.ask(
-        f"  Short description for commit message ({work_item_label})",
+    commit_type = Prompt.ask(
+        "  Commit type",
+        choices=list(COMMIT_TYPES),
+        default=default_type,
         console=console,
     ).strip()
-    if not description:
-        console.print("[bold red]ERROR:[/] Description cannot be empty.")
-        sys.exit(1)
 
-    header = f"{prefix}({scope}): {description}" if scope else f"{prefix}: {description}"
-    return header
+    while True:
+        scope = Prompt.ask(
+            "  Scope (Requestor/Supplier, leave blank to skip)",
+            default="",
+            console=console,
+        ).strip()
+        if not scope or scope in COMMIT_SCOPES:
+            break
+        console.print("[bold red]ERROR:[/] Scope must be Requestor, Supplier, or blank.")
+
+    while True:
+        summary_prompt = f"  Short summary for commit message ({work_item_label})"
+        if work_item_title:
+            summary = Prompt.ask(summary_prompt, default=work_item_title, console=console).strip()
+        else:
+            summary = Prompt.ask(summary_prompt, console=console).strip()
+
+        if not summary:
+            console.print("[bold red]ERROR:[/] Summary cannot be empty.")
+            continue
+
+        subject = format_commit_subject(commit_type, scope or None, work_item_tag, work_item_id, summary)
+        if len(subject) > 72:
+            console.print(
+                f"[bold red]ERROR:[/] Subject must be 72 characters or fewer. Current length: {len(subject)}"
+            )
+            continue
+        break
+
+    return {
+        "subject": subject,
+        "type": commit_type,
+        "scope": scope or None,
+        "summary": summary,
+        "work_item_tag": work_item_tag,
+    }
 
 
 def commit_and_push(branch: str, message: str) -> str:
@@ -344,10 +397,12 @@ def build_run_summary(
     target_ref: str,
     commit_message: str,
     work_item_id: str | None,
+    pr_description: str,
 ) -> str:
     pr_title = commit_message.splitlines()[0]
     payload: dict = {
         "title": pr_title,
+        "description": pr_description,
         "sourceRefName": f"refs/heads/{branch}",
         "targetRefName": target_ref,
     }
@@ -365,9 +420,51 @@ def build_run_summary(
     ]
     if "\n" in commit_message:
         lines.append("- commit body: present")
+    lines.append(f"- PR description: {'present' if pr_description.strip() else '(empty)'}")
     lines.append("- PR payload preview:")
     lines.append(json.dumps(payload, indent=2))
     return "\n".join(lines)
+
+
+def build_pr_description(
+    *,
+    commit_message: str,
+    branch: str,
+    target_ref: str,
+    work_item_id: str | None,
+    work_item_details: dict | None,
+    commit_scope: str | None,
+    commit_summary: str,
+    work_item_tag: str | None,
+) -> str:
+    lines: list[str] = []
+    work_item_title = work_item_details.get("title") if work_item_details else None
+    work_item_type = work_item_details.get("type") if work_item_details else None
+    target_display = target_ref.replace("refs/heads/", "", 1)
+
+    if work_item_id:
+        item_ref = f"{work_item_tag or 'US'} {work_item_id}"
+        if work_item_title:
+            lines.append(f"This PR covers {item_ref}: {work_item_title}.")
+        else:
+            lines.append(f"This PR covers {item_ref}.")
+    else:
+        lines.append("This PR contains the requested changes.")
+
+    if commit_scope:
+        lines.append(f"It is focused on the {commit_scope} flow.")
+
+    lines.append(f"It is being raised from {branch} to {target_display}.")
+
+    if commit_summary:
+        lines.append("")
+        lines.append(f"Summary: {commit_summary}.")
+
+    if work_item_type:
+        lines.append("")
+        lines.append(f"Work item type: {work_item_type}.")
+
+    return "\n".join(lines).strip()
 
 
 def append_audit_log(
@@ -425,6 +522,7 @@ def create_pr(
     source_branch: str,
     target_ref: str,
     title: str,
+    description: str,
     work_item_id: str | None,
     auth: HTTPBasicAuth,
 ) -> str:
@@ -434,6 +532,7 @@ def create_pr(
     )
     payload: dict = {
         "title": title,
+        "description": description,
         "sourceRefName": f"refs/heads/{source_branch}",
         "targetRefName": target_ref,
     }
@@ -601,10 +700,29 @@ def main() -> None:
     if args.message and args.message.strip():
         commit_message = args.message.strip()
         console.print("[dim]Using provided commit message.[/]")
+        work_item_tag = resolve_work_item_subject_tag(branch_type, work_item_details.get("type") if work_item_details else None) if work_item_id else None
+        commit_scope = "Requestor" if "[Requestor]" in commit_message else "Supplier" if "[Supplier]" in commit_message else None
+        commit_summary = commit_message.split(":", 1)[1].strip() if ":" in commit_message else commit_message.strip()
     else:
-        commit_message = build_commit_message(branch_type, work_item_id, work_item_details, work_item_label)
+        commit_details = build_commit_message(branch_type, work_item_id, work_item_details, work_item_label)
+        commit_message = commit_details["subject"]
+        commit_scope = commit_details["scope"]
+        commit_summary = commit_details["summary"]
+        work_item_tag = commit_details["work_item_tag"]
+
+    pr_description = build_pr_description(
+        commit_message=commit_message,
+        branch=branch,
+        target_ref=target_ref,
+        work_item_id=work_item_id,
+        work_item_details=work_item_details,
+        commit_scope=commit_scope,
+        commit_summary=commit_summary,
+        work_item_tag=work_item_tag,
+    )
 
     console.print(f"\n[dim]Commit message preview:[/]\n[bold]{commit_message}[/]\n")
+    console.print(f"[dim]PR description preview:[/]\n{pr_description}\n")
     target_display = target_ref.replace("refs/heads/", "")
     console.print(
         "[dim]Planned PR:[/] "
@@ -622,6 +740,7 @@ def main() -> None:
                 target_ref=target_ref,
                 commit_message=commit_message,
                 work_item_id=work_item_id,
+                pr_description=pr_description,
             ),
             title="Execution Plan",
             expand=False,
@@ -656,7 +775,7 @@ def main() -> None:
     console.print(f"\n[dim]Creating PR:[/] [cyan]{branch}[/] → [cyan]{target_display}[/]")
 
     try:
-        pr_url = create_pr(org, project, repo, branch, target_ref, pr_title, work_item_id, auth)
+        pr_url = create_pr(org, project, repo, branch, target_ref, pr_title, pr_description, work_item_id, auth)
         console.print(f"\n[bold green]PR created:[/] {pr_url}")
         if args.open_pr:
             open_pr_in_browser(pr_url)
