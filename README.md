@@ -243,6 +243,8 @@ PR created: https://dev.azure.com/<org>/<project>/_git/<repo>/pullrequest/<id>
 
 In dry-run, script still prints full commit message preview, PR description preview, and planned PR details, but does not create PR.
 
+At any point, you can press `Ctrl+C` to cancel the flow cleanly. The script exits without a traceback and prints `Cancelled.`
+
 ## Dry-Run Behavior
 
 In `--dry-run` mode, script will:
@@ -335,6 +337,7 @@ Includes:
 | PR description selection | PR description is always present and now lets you choose between `commit` and `ask` modes. |
 | Commit style docs | README now documents allowed commit formats, rules, and examples. |
 | Numbered prompt flow | Type and scope are selected by number, and summary mode now handles long defaults explicitly. |
+| Graceful cancel | `Ctrl+C` now cancels the script cleanly at any point without showing a traceback. |
 
 ### v1.5.0 - Browser Open + Validation-Only Mode
 
