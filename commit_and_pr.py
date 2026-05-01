@@ -204,6 +204,11 @@ def main() -> None:
         "-m",
         help="Commit message to use as-is. If omitted, message is generated interactively.",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview commit/push/PR actions without creating commit, push, or PR.",
+    )
     args = parser.parse_args()
 
     pat, org, project, repo = load_pat()
@@ -212,9 +217,12 @@ def main() -> None:
     branch = current_branch()
     console.print(f"[dim]Branch:[/] [cyan]{branch}[/]")
 
-    if not has_staged_changes():
+    staged_changes = has_staged_changes()
+    if not staged_changes and not args.dry_run:
         console.print("[bold red]ERROR:[/] No staged changes. Stage your files first (git add …).")
         sys.exit(1)
+    if not staged_changes and args.dry_run:
+        console.print("[yellow]Dry run:[/] no staged changes found, continuing preview only.")
 
     target_ref, work_item_id = parse_branch(branch)
 
@@ -251,6 +259,17 @@ def main() -> None:
         commit_message = build_commit_message(branch_type, work_item_id, work_item_title, work_item_label)
 
     console.print(f"\n[dim]Commit message preview:[/]\n[bold]{commit_message}[/]\n")
+    target_display = target_ref.replace("refs/heads/", "")
+    console.print(
+        "[dim]Planned PR:[/] "
+        f"[cyan]{branch}[/] -> [cyan]{target_display}[/]"
+        + (f" | linked item: [cyan]#{work_item_id}[/]" if work_item_id else "")
+    )
+
+    if args.dry_run:
+        console.print("\n[bold green]Dry run complete.[/] No commit, push, or PR was created.")
+        return
+
     confirm = Prompt.ask("  Proceed? [y/N]", default="N", console=console).strip().lower()
     if confirm != "y":
         console.print("[yellow]Aborted.[/]")
@@ -259,7 +278,6 @@ def main() -> None:
     commit_and_push(branch, commit_message)
 
     pr_title = commit_message.splitlines()[0]
-    target_display = target_ref.replace("refs/heads/", "")
     console.print(f"\n[dim]Creating PR:[/] [cyan]{branch}[/] → [cyan]{target_display}[/]")
 
     try:

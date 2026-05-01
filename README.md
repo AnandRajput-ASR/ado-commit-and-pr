@@ -1,0 +1,154 @@
+# ADO Commit and PR Automation
+
+Automates the final workflow for a feature/bug branch:
+
+1. Use current branch name to infer PR target branch
+2. Detect or ask for User Story/Bug ID
+3. Build commit message (provided by you or generated)
+4. Commit staged changes
+5. Push branch
+6. Create Azure DevOps PR and link work item
+
+## Branch Convention
+
+Supported formats:
+
+- `feature/<release|develop>/<work-item-id>`
+- `bug/<release|develop>/<work-item-id>`
+- `bugfix/<release|develop>/<work-item-id>`
+- `hotfix/<release|develop>/<work-item-id>`
+
+Examples:
+
+- `feature/19.0.0/61527` -> target `refs/heads/release/19.0.0`
+- `feature/develop/61527` -> target `refs/heads/develop`
+- `bug/20.0.0/61527` -> target `refs/heads/release/20.0.0`
+
+If branch does not match this pattern, script asks target branch and optional work item ID.
+
+## Requirements
+
+- Python 3.10+
+- Git installed and branch checked out
+- Azure DevOps PAT with repo + work item read/write permissions as needed
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Environment Variables
+
+Create `.env` either:
+
+- one level above this folder (`../.env`) or
+- inside this folder (`./.env`)
+
+Required keys:
+
+```env
+AZURE_DEVOPS_PAT=your_pat
+AZURE_DEVOPS_ORG=your_org
+AZURE_DEVOPS_PROJECT=your_project
+AZURE_DEVOPS_REPO=your_repo
+```
+
+## Usage
+
+Basic interactive run:
+
+```bash
+python commit_and_pr.py
+```
+
+Provide commit message directly:
+
+```bash
+python commit_and_pr.py -m "feat(#61527): add supplier search validation"
+```
+
+Dry-run (no commit/push/PR):
+
+```bash
+python commit_and_pr.py --dry-run
+```
+
+Dry-run with explicit message:
+
+```bash
+python commit_and_pr.py --dry-run -m "fix(#61527): handle null payload"
+```
+
+## Flags
+
+| Flag | Description |
+|---|---|
+| `-m`, `--message` | Use provided commit message as-is. If omitted, script generates message interactively. |
+| `--dry-run` | Preview commit/PR plan without creating commit, push, or PR. |
+
+## Commit Message Behavior
+
+- If `--message` is passed, that value is used directly.
+- If message is not passed:
+  - Script infers branch type (`feature` => `feat`, `bug|bugfix|hotfix` => `fix`)
+  - If work item title is available from ADO, it uses that title
+  - Otherwise asks for a short description and builds header
+
+Examples:
+
+- `feat(#61527): Add invoice filter`
+- `fix(#61527): Resolve API timeout`
+
+## End-to-End Workflow
+
+1. Stage your changes (`git add ...`)
+2. Run script from branch like `feature/19.0.0/61527`
+3. Confirm commit preview
+4. Script commits and pushes branch
+5. Script creates PR to inferred target
+6. Script links work item to PR
+
+## Dry-Run Behavior
+
+In `--dry-run` mode, script will:
+
+- Read branch
+- Infer/ask target branch
+- Infer/ask story or bug ID
+- Build commit message preview
+- Show planned PR mapping
+
+In `--dry-run` mode, script will not:
+
+- create commit
+- push branch
+- call PR creation API
+
+## Troubleshooting
+
+| Issue | Reason | Fix |
+|---|---|---|
+| Missing env variables | Required ADO values not found | Set all required keys in `.env` |
+| No staged changes | Nothing in index | Run `git add` or use `--dry-run` for preview |
+| Branch not matching pattern | Custom branch format | Enter target branch and work item when prompted |
+| Work item title not fetched | Invalid ID or permission issue | Check ID, PAT scope, and org/project access |
+| PR already exists | ADO already has open PR for source branch | Script reports existing PR URL |
+
+## Changelog
+
+### v1.1.0 - Dry Run + Message Control
+
+| Feature | Details |
+|---|---|
+| Optional commit message | Added `-m/--message` to accept user-provided commit message. |
+| Story/Bug aware prompts | Prompts User Story or Bug ID based on branch type when ID is missing. |
+| Dry run mode | Added `--dry-run` to preview commit and PR actions with zero side effects. |
+
+### v1.0.0 - Initial Release
+
+| Feature | Details |
+|---|---|
+| Branch parsing | Infers target release/develop branch from naming convention. |
+| Auto commit+push+PR | Runs commit, push, and PR creation in one flow. |
+| Work item linking | Links ADO work item to created PR. |
