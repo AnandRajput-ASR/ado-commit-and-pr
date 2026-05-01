@@ -40,10 +40,13 @@ pip install -r requirements.txt
 
 ## Environment Variables
 
-Create `.env` either:
+Create `.env` inside this folder (`./.env`) only.
 
-- one level above this folder (`../.env`) or
-- inside this folder (`./.env`)
+You can copy from `.env.example`:
+
+```bash
+copy .env.example .env
+```
 
 Required keys:
 
@@ -136,6 +139,13 @@ In `--dry-run` mode, script will not:
 | PR already exists | ADO already has open PR for source branch | Script reports existing PR URL |
 
 ## Changelog
+
+### v1.2.0 - Local Env Standardization
+
+| Feature | Details |
+|---|---|
+| Local-only env loading | Script now reads `.env` only from the automation folder. |
+| Env template | Added `.env.example` with all required ADO keys. |
 
 ### v1.1.0 - Dry Run + Message Control
 

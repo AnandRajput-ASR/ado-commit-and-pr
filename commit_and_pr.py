@@ -43,11 +43,9 @@ BRANCH_PATTERN = re.compile(
 
 
 def load_pat() -> tuple[str, str, str, str]:
-    env_path = Path(__file__).parent.parent / ".env"
+    env_path = Path(__file__).parent / ".env"
     if not env_path.exists():
-        env_path = Path(__file__).parent / ".env"
-    if not env_path.exists():
-        console.print("[bold red]ERROR:[/] .env file not found next to this script or one level up.")
+        console.print("[bold red]ERROR:[/] .env file not found in this folder.")
         sys.exit(1)
     load_dotenv(env_path)
 
