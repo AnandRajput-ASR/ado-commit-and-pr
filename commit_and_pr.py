@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import sys
+import argparse
 from pathlib import Path
 
 import requests
@@ -122,26 +123,31 @@ def get_work_item_title(org: str, work_item_id: str, auth: HTTPBasicAuth) -> str
         return None
 
 
-def build_commit_message(branch_type: str, work_item_id: str | None, work_item_title: str | None) -> str:
+def build_commit_message(
+    branch_type: str,
+    work_item_id: str | None,
+    work_item_title: str | None,
+    work_item_label: str,
+) -> str:
     console.print()
     if work_item_title:
         console.print(f"[dim]Work item:[/] [cyan]#{work_item_id}[/] — {work_item_title}")
 
+    prefix = "fix" if branch_type.lower() in ("bug", "bugfix", "hotfix") else "feat"
+    scope = f"#{work_item_id}" if work_item_id else ""
+
+    if work_item_title:
+        return f"{prefix}({scope}): {work_item_title}" if scope else f"{prefix}: {work_item_title}"
+
     description = Prompt.ask(
-        "  Short description for commit message",
+        f"  Short description for commit message ({work_item_label})",
         console=console,
     ).strip()
     if not description:
         console.print("[bold red]ERROR:[/] Description cannot be empty.")
         sys.exit(1)
 
-    prefix = "fix" if branch_type.lower() in ("bug", "bugfix", "hotfix") else "feat"
-    scope = f"#{work_item_id}" if work_item_id else ""
     header = f"{prefix}({scope}): {description}" if scope else f"{prefix}: {description}"
-
-    if work_item_title:
-        body = f"\nWork Item #{work_item_id}: {work_item_title}"
-        return f"{header}{body}"
     return header
 
 
@@ -192,6 +198,14 @@ def create_pr(
 def main() -> None:
     console.print(Panel("[bold cyan]ADO Commit & PR[/]", expand=False))
 
+    parser = argparse.ArgumentParser(description="Commit staged changes and auto-create ADO PR.")
+    parser.add_argument(
+        "--message",
+        "-m",
+        help="Commit message to use as-is. If omitted, message is generated interactively.",
+    )
+    args = parser.parse_args()
+
     pat, org, project, repo = load_pat()
     auth = HTTPBasicAuth("", pat)
 
@@ -215,9 +229,12 @@ def main() -> None:
         ).strip()
         target_ref = f"refs/heads/{target_input}"
 
+    branch_type = branch.split("/")[0] if "/" in branch else "feature"
+    work_item_label = "Bug" if branch_type.lower() in ("bug", "bugfix", "hotfix") else "User Story"
+
     if not work_item_id:
         work_item_id = Prompt.ask(
-            "  Work item ID to link (leave blank to skip)",
+            f"  {work_item_label} ID to link (leave blank to skip)",
             default="",
             console=console,
         ).strip() or None
@@ -227,8 +244,11 @@ def main() -> None:
         with console.status("[dim]Fetching work item title…[/]"):
             work_item_title = get_work_item_title(org, work_item_id, auth)
 
-    branch_type = branch.split("/")[0] if "/" in branch else "feature"
-    commit_message = build_commit_message(branch_type, work_item_id, work_item_title)
+    if args.message and args.message.strip():
+        commit_message = args.message.strip()
+        console.print("[dim]Using provided commit message.[/]")
+    else:
+        commit_message = build_commit_message(branch_type, work_item_id, work_item_title, work_item_label)
 
     console.print(f"\n[dim]Commit message preview:[/]\n[bold]{commit_message}[/]\n")
     confirm = Prompt.ask("  Proceed? [y/N]", default="N", console=console).strip().lower()
