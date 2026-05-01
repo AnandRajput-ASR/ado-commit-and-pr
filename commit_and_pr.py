@@ -296,6 +296,7 @@ def build_commit_message(
     )
 
     while True:
+        allow_long_subject = False
         if work_item_title:
             default_subject = format_commit_subject(
                 commit_type,
@@ -320,6 +321,7 @@ def build_commit_message(
                 )
                 if summary_mode is None:
                     summary = work_item_title
+                    allow_long_subject = True
                 else:
                     summary = Prompt.ask(
                         f"  Short summary for commit message ({work_item_label})",
@@ -355,7 +357,7 @@ def build_commit_message(
             continue
 
         subject = format_commit_subject(commit_type, scope or None, work_item_tag, work_item_id, summary)
-        if len(subject) > 72:
+        if len(subject) > 72 and not allow_long_subject:
             console.print(
                 f"[bold red]ERROR:[/] Subject must be 72 characters or fewer. Current length: {len(subject)}"
             )

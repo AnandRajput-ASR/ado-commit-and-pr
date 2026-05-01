@@ -148,7 +148,7 @@ If a repo remote is not ADO or you want explicit values, use CLI overrides (`--o
   - Script offers summary selection:
     - use default work item title
     - or enter custom summary
-  - If default title would exceed 72 characters, script warns and asks whether to keep default or enter a shorter summary
+  - If default title would exceed 72 characters, script warns and asks whether to keep default anyway or enter a shorter summary
   - Script builds the subject using the locked standard
 
 Examples:
@@ -205,7 +205,7 @@ Prompt behavior:
 1. Select commit type by number
 2. Select scope by number
 3. Choose summary mode
-4. If default title is too long, decide whether to keep it or enter a shorter custom summary
+4. If default title is too long, decide whether to keep it anyway or enter a shorter custom summary
 
 ## PR Description Behavior
 
