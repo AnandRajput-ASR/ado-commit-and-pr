@@ -188,19 +188,6 @@ def parse_branch(branch: str) -> tuple[str, str | None]:
     return target_ref, work_item_id
 
 
-def get_work_item_title(org: str, project: str, work_item_id: str, auth: HTTPBasicAuth) -> str | None:
-    url = (
-        f"https://dev.azure.com/{org}/{project}/_apis/wit/workitems/{work_item_id}"
-        f"?api-version={ADO_API_VERSION}"
-    )
-    try:
-        resp = requests.get(url, auth=auth, timeout=10)
-        resp.raise_for_status()
-        return resp.json().get("fields", {}).get("System.Title")
-    except Exception:
-        return None
-
-
 def format_commit_subject(
     commit_type: str,
     scope: str | None,
