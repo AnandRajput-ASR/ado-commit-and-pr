@@ -429,42 +429,22 @@ def build_run_summary(
 def build_pr_description(
     *,
     commit_message: str,
+    mode: str,
     branch: str,
-    target_ref: str,
-    work_item_id: str | None,
-    work_item_details: dict | None,
-    commit_scope: str | None,
-    commit_summary: str,
-    work_item_tag: str | None,
 ) -> str:
-    lines: list[str] = []
-    work_item_title = work_item_details.get("title") if work_item_details else None
-    work_item_type = work_item_details.get("type") if work_item_details else None
-    target_display = target_ref.replace("refs/heads/", "", 1)
+    if mode == "commit":
+        return commit_message.strip()
 
-    if work_item_id:
-        item_ref = f"{work_item_tag or 'US'} {work_item_id}"
-        if work_item_title:
-            lines.append(f"This PR covers {item_ref}: {work_item_title}.")
-        else:
-            lines.append(f"This PR covers {item_ref}.")
-    else:
-        lines.append("This PR contains the requested changes.")
-
-    if commit_scope:
-        lines.append(f"It is focused on the {commit_scope} flow.")
-
-    lines.append(f"It is being raised from {branch} to {target_display}.")
-
-    if commit_summary:
-        lines.append("")
-        lines.append(f"Summary: {commit_summary}.")
-
-    if work_item_type:
-        lines.append("")
-        lines.append(f"Work item type: {work_item_type}.")
-
-    return "\n".join(lines).strip()
+    console.print()
+    console.print(f"[dim]Branch for PR description:[/] [cyan]{branch}[/]")
+    description = Prompt.ask(
+        "  PR description",
+        console=console,
+    ).strip()
+    if not description:
+        console.print("[bold red]ERROR:[/] PR description cannot be empty.")
+        sys.exit(1)
+    return description
 
 
 def append_audit_log(
@@ -710,15 +690,17 @@ def main() -> None:
         commit_summary = commit_details["summary"]
         work_item_tag = commit_details["work_item_tag"]
 
+    description_mode = Prompt.ask(
+        "  PR description mode",
+        choices=["commit", "ask"],
+        default="commit",
+        console=console,
+    ).strip()
+
     pr_description = build_pr_description(
         commit_message=commit_message,
+        mode=description_mode,
         branch=branch,
-        target_ref=target_ref,
-        work_item_id=work_item_id,
-        work_item_details=work_item_details,
-        commit_scope=commit_scope,
-        commit_summary=commit_summary,
-        work_item_tag=work_item_tag,
     )
 
     console.print(f"\n[dim]Commit message preview:[/]\n[bold]{commit_message}[/]\n")

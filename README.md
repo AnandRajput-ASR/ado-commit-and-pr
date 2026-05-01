@@ -199,23 +199,19 @@ The automation asks you for `type`, `scope`, and a short summary when message is
 
 ## PR Description Behavior
 
-- PR description is always generated automatically.
-- It is intentionally short and human-readable.
-- It uses:
-  - work item id and title when available
-  - chosen scope when available
-  - source branch
-  - target branch
-  - short summary from the commit flow
+- PR description is always present.
+- On each run, script asks you to choose one mode:
+  - `commit` -> use the commit message as PR description
+  - `ask` -> prompt you to type a custom PR description
 
-Generated PR description example:
+Examples:
 
 ```text
-This PR covers US 61527: Add supplier onboarding validation.
-It is focused on the Requestor flow.
-It is being raised from feature/19.0.0/61527 to release/19.0.0.
+commit mode:
+feat[Requestor][US 61527]: Add supplier onboarding validation
 
-Summary: Add supplier onboarding validation.
+ask mode:
+Add supplier onboarding validation for the Requestor flow.
 ```
 
 ## End-to-End Workflow
@@ -326,7 +322,7 @@ Includes:
 |---|---|
 | Locked commit format | Commit generation now follows the requested `type[scope][US/BUG n]: summary` pattern. |
 | Interactive commit prompts | Script now asks for commit type, scope, and summary when `-m` is not provided. |
-| Automatic PR description | PR description is always generated automatically in a shorter, more human style. |
+| PR description selection | PR description is always present and now lets you choose between `commit` and `ask` modes. |
 | Commit style docs | README now documents allowed commit formats, rules, and examples. |
 
 ### v1.5.0 - Browser Open + Validation-Only Mode
