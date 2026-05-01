@@ -142,10 +142,13 @@ If a repo remote is not ADO or you want explicit values, use CLI overrides (`--o
 
 - If `--message` is passed, that value is used directly.
 - If message is not passed:
-  - Script asks for commit type
-  - Script asks for scope (`Requestor` or `Supplier`, or blank)
+  - Script shows numbered options for commit type
+  - Script shows numbered options for scope (`Requestor`, `Supplier`, or no scope)
   - Script uses work item id as `US <number>` or `BUG <number>`
-  - Script asks for a short summary
+  - Script offers summary selection:
+    - use default work item title
+    - or enter custom summary
+  - If default title would exceed 72 characters, script warns and asks whether to keep default or enter a shorter summary
   - Script builds the subject using the locked standard
 
 Examples:
@@ -196,6 +199,13 @@ Examples:
 - `chore[US 61527]: Clean up PR logging output`
 
 The automation asks you for `type`, `scope`, and a short summary when message is not supplied. It derives `US` or `BUG` from the work item/branch context.
+
+Prompt behavior:
+
+1. Select commit type by number
+2. Select scope by number
+3. Choose summary mode
+4. If default title is too long, decide whether to keep it or enter a shorter custom summary
 
 ## PR Description Behavior
 
@@ -324,6 +334,7 @@ Includes:
 | Interactive commit prompts | Script now asks for commit type, scope, and summary when `-m` is not provided. |
 | PR description selection | PR description is always present and now lets you choose between `commit` and `ask` modes. |
 | Commit style docs | README now documents allowed commit formats, rules, and examples. |
+| Numbered prompt flow | Type and scope are selected by number, and summary mode now handles long defaults explicitly. |
 
 ### v1.5.0 - Browser Open + Validation-Only Mode
 

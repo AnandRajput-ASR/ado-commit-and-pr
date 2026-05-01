@@ -216,6 +216,53 @@ def format_commit_subject(
     return "".join(segments) + f": {summary}"
 
 
+def choose_numbered_option(
+    *,
+    label: str,
+    options: tuple[str, ...],
+    default_value: str | None = None,
+    allow_blank: bool = False,
+    blank_label: str = "Skip",
+) -> str | None:
+    console.print(f"\n[dim]{label}:[/]")
+    default_index: int | None = None
+    for index, option in enumerate(options, start=1):
+        suffix = ""
+        if default_value == option:
+            default_index = index
+            suffix = " [dim](default)[/]"
+        console.print(f"  {index}. {option}{suffix}")
+
+    blank_index: int | None = None
+    if allow_blank:
+        blank_index = len(options) + 1
+        blank_suffix = " [dim](default)[/]" if default_value in (None, "") else ""
+        console.print(f"  {blank_index}. {blank_label}{blank_suffix}")
+
+    prompt_default = ""
+    if default_index is not None:
+        prompt_default = str(default_index)
+    elif allow_blank and blank_index is not None:
+        prompt_default = str(blank_index)
+
+    while True:
+        selection = Prompt.ask(
+            f"  Select {label.lower()} by number",
+            default=prompt_default,
+            console=console,
+        ).strip()
+        if not selection.isdigit():
+            console.print("[bold red]ERROR:[/] Enter a number from the list.")
+            continue
+
+        selected_index = int(selection)
+        if 1 <= selected_index <= len(options):
+            return options[selected_index - 1]
+        if allow_blank and blank_index is not None and selected_index == blank_index:
+            return None
+        console.print("[bold red]ERROR:[/] Enter a valid option number from the list.")
+
+
 def build_commit_message(
     branch_type: str,
     work_item_id: str | None,
@@ -235,29 +282,73 @@ def build_commit_message(
     default_type = resolve_prefix(branch_type, work_item_type)
     work_item_tag = resolve_work_item_subject_tag(branch_type, work_item_type) if work_item_id else None
 
-    commit_type = Prompt.ask(
-        "  Commit type",
-        choices=list(COMMIT_TYPES),
-        default=default_type,
-        console=console,
-    ).strip()
+    commit_type = choose_numbered_option(
+        label="Commit type",
+        options=COMMIT_TYPES,
+        default_value=default_type,
+    )
+
+    scope = choose_numbered_option(
+        label="Scope",
+        options=COMMIT_SCOPES,
+        allow_blank=True,
+        blank_label="No scope",
+    )
 
     while True:
-        scope = Prompt.ask(
-            "  Scope (Requestor/Supplier, leave blank to skip)",
-            default="",
-            console=console,
-        ).strip()
-        if not scope or scope in COMMIT_SCOPES:
-            break
-        console.print("[bold red]ERROR:[/] Scope must be Requestor, Supplier, or blank.")
-
-    while True:
-        summary_prompt = f"  Short summary for commit message ({work_item_label})"
         if work_item_title:
-            summary = Prompt.ask(summary_prompt, default=work_item_title, console=console).strip()
+            default_subject = format_commit_subject(
+                commit_type,
+                scope,
+                work_item_tag,
+                work_item_id,
+                work_item_title,
+            )
+            default_too_long = len(default_subject) > 72
+            if default_too_long:
+                console.print(
+                    f"\n[yellow]Default summary will exceed 72 characters[/] "
+                    f"(subject length: {len(default_subject)})."
+                )
+                console.print(f"  Default summary: {work_item_title}")
+                summary_mode = choose_numbered_option(
+                    label="Summary mode",
+                    options=("Enter custom summary",),
+                    allow_blank=True,
+                    blank_label="Use default summary anyway",
+                    default_value=None,
+                )
+                if summary_mode is None:
+                    summary = work_item_title
+                else:
+                    summary = Prompt.ask(
+                        f"  Short summary for commit message ({work_item_label})",
+                        console=console,
+                    ).strip()
+            else:
+                console.print("\n[dim]Summary mode:[/]")
+                console.print(f"  1. Use default summary [dim](recommended)[/] -> {work_item_title}")
+                console.print("  2. Enter custom summary")
+                summary_choice = Prompt.ask(
+                    "  Select summary mode by number",
+                    default="1",
+                    console=console,
+                ).strip()
+                if summary_choice == "1":
+                    summary = work_item_title
+                elif summary_choice == "2":
+                    summary = Prompt.ask(
+                        f"  Short summary for commit message ({work_item_label})",
+                        console=console,
+                    ).strip()
+                else:
+                    console.print("[bold red]ERROR:[/] Enter 1 or 2.")
+                    continue
         else:
-            summary = Prompt.ask(summary_prompt, console=console).strip()
+            summary = Prompt.ask(
+                f"  Short summary for commit message ({work_item_label})",
+                console=console,
+            ).strip()
 
         if not summary:
             console.print("[bold red]ERROR:[/] Summary cannot be empty.")
